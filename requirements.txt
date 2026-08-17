@@ -1,0 +1,26 @@
+# Telegram
+aiogram>=3.13.0,<4.0
+
+# Config
+pydantic>=2.8.0,<3.0
+pydantic-settings>=2.4.0,<3.0
+python-dotenv>=1.0.0,<2.0
+
+# Database
+aiosqlite>=0.20.0,<1.0
+
+# Images
+Pillow>=10.4.0
+numpy>=1.26.0
+opencv-python-headless>=4.10.0
+
+# Background removal (CPU only)
+rembg>=2.0.57
+onnxruntime>=1.18.0
+
+# Utils
+aiofiles>=24.1.0
+filetype>=1.2.0
+
+# AI providers (подключим на шаге 6)
+# gigachat>=0.4.0
