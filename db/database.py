@@ -1,4 +1,4 @@
-"""SQLite: пользователи, использование, платежи. Только ?-плейсхолдеры."""
+"""SQLite: пользователи, использование, платежи, паспорт продавца. Только ?-плейсхолдеры."""
 from __future__ import annotations
 
 from datetime import datetime, timedelta
@@ -19,6 +19,7 @@ async def init_db() -> None:
                 is_premium    INTEGER NOT NULL DEFAULT 0,
                 premium_until TEXT,
                 ai_trial_used INTEGER NOT NULL DEFAULT 0,
+                consent_at    TEXT,
                 created_at    TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS usage_events (
@@ -37,8 +38,20 @@ async def init_db() -> None:
                 status         TEXT NOT NULL DEFAULT 'pending',
                 created_at     TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS seller_passport (
+                telegram_id INTEGER PRIMARY KEY,
+                name        TEXT NOT NULL,
+                status      TEXT NOT NULL,
+                city        TEXT NOT NULL,
+                updated_at  TEXT NOT NULL
+            );
             """
         )
+        # Миграция: у старых БД может не быть consent_at
+        try:
+            await db.execute("ALTER TABLE users ADD COLUMN consent_at TEXT")
+        except aiosqlite.OperationalError:
+            pass
         await db.commit()
 
 
@@ -80,6 +93,61 @@ async def set_premium(telegram_id: int, days: int = 30) -> None:
         )
         await db.commit()
 
+
+# ========== Согласие (152-ФЗ) ==========
+
+async def set_consent(telegram_id: int) -> None:
+    await ensure_user(telegram_id)
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE users SET consent_at = ? WHERE telegram_id = ?",
+            (datetime.utcnow().isoformat(), telegram_id),
+        )
+        await db.commit()
+
+
+async def get_consent(telegram_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT consent_at FROM users WHERE telegram_id = ?", (telegram_id,)
+        ) as cur:
+            row = await cur.fetchone()
+    return row[0] if row else None
+
+
+# ========== Паспорт продавца (289-ФЗ) ==========
+
+async def save_passport(telegram_id: int, name: str, status: str, city: str) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT INTO seller_passport (telegram_id, name, status, city, updated_at) "
+            "VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(telegram_id) DO UPDATE SET name=excluded.name, "
+            "status=excluded.status, city=excluded.city, updated_at=excluded.updated_at",
+            (telegram_id, name, status, city, datetime.utcnow().isoformat()),
+        )
+        await db.commit()
+
+
+async def get_passport(telegram_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT name, status, city FROM seller_passport WHERE telegram_id = ?",
+            (telegram_id,),
+        ) as cur:
+            return await cur.fetchone()
+
+
+async def forget_user(telegram_id: int) -> None:
+    """Право на забвение: удаляем паспорт и отзываем согласие."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM seller_passport WHERE telegram_id = ?", (telegram_id,))
+        await db.execute("UPDATE users SET consent_at = NULL WHERE telegram_id = ?", (telegram_id,))
+        await db.commit()
+
+
+# ========== Использование ==========
 
 async def add_usage(telegram_id: int, profile: str, category: str, ai_used: bool) -> None:
     async with aiosqlite.connect(DB_PATH) as db:

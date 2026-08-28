@@ -5,7 +5,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
-from bot.handlers import admin, category, photo, profile, start
+from bot.handlers import admin, category, legal, passport, photo, profile, start
 from bot.middlewares.throttling import ThrottlingMiddleware
 from config import logger, settings
 from db import database as db
@@ -48,6 +48,8 @@ async def main() -> None:
     dp.include_router(profile.router)
     dp.include_router(category.router)
     dp.include_router(photo.router)
+    dp.include_router(passport.router)
+    dp.include_router(legal.router)
     dp.include_router(admin.router)
 
     asyncio.create_task(_cleanup_loop())

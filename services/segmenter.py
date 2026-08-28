@@ -1,4 +1,4 @@
-"""Вырезание товара: BiRefNet (fallback u2net) + очистка маски по цвету фона."""
+"""Вырезание товара: BiRefNet (CPU) + u2net-кроссчек + очистка маски."""
 from __future__ import annotations
 
 import asyncio
@@ -11,9 +11,13 @@ from PIL import Image
 
 from config import logger, settings
 
-# BiRefNet — точные края, целые манжеты, без боковых полос.
-# u2net — только как fallback, если BiRefNet недоступен.
-MODEL_CANDIDATES = ("birefnet-general", "u2net")
+# Основные модели: первая доступная с хорошей маской — в работу.
+# birefnet-general — проверенный рабочий для CPU (~60 сек).
+# bria-rmbg (BRIA RMBG-2.0) на CPU слишком медленная (>120 сек) —
+# вернём её основной на GPU в Фазе 2 (там 5–10 сек и идеальные края).
+PRIMARY_MODELS = ("birefnet-general",)
+# Кроссчек: u2net не видит «хвост» простыни → используем для его удаления.
+CROSS_MODEL = "u2net"
 
 MIN_GOOD_MASK_RATIO = 0.12
 
@@ -47,10 +51,7 @@ def _opaque_ratio(png_bytes: bytes) -> float:
 
 
 def _background_color_keys(orig: np.ndarray) -> set:
-    """
-    Цветовой отпечаток фона: частые цвета НИЖНЕЙ полосы исходника (12%).
-    Там та же простыня в том же освещении/тени, что и «хвост» под товаром.
-    """
+    """Цветовой отпечаток фона: частые цвета нижней полосы исходника (12%)."""
     H, W = orig.shape[:2]
     strip = orig[int(H * 0.88):, :]
 
@@ -62,13 +63,17 @@ def _background_color_keys(orig: np.ndarray) -> set:
     return set(vals[counts >= min_count].tolist())
 
 
-def _mask_cleanup(png_bytes: bytes, orig_bytes: bytes | None = None) -> bytes:
+def _mask_cleanup(
+    png_bytes: bytes,
+    orig_bytes: bytes | None = None,
+    cross_bytes: bytes | None = None,
+) -> bytes:
     """
     Очистка маски:
-    - opening срезает тонкие «антенны»;
-    - самая большая компонента удаляет отдельные куски;
-    - ниже линии подола: пиксели цвета фона (простыни) удаляются;
-    - жёсткий срез с допуском 1% как страховка.
+    - opening + самая большая связная компонента;
+    - «хвост» фона удаляется ТОЛЬКО при тройном совпадении:
+      зона ниже подола + цвет фона + u2net пиксель не видит;
+    - жёсткий срез — только если хвост реально обнаружен.
     """
     arr = cv2.imdecode(np.frombuffer(png_bytes, np.uint8), cv2.IMREAD_UNCHANGED)
     if arr is None or arr.ndim != 3 or arr.shape[2] < 4:
@@ -79,6 +84,12 @@ def _mask_cleanup(png_bytes: bytes, orig_bytes: bytes | None = None) -> bytes:
         orig = cv2.imdecode(np.frombuffer(orig_bytes, np.uint8), cv2.IMREAD_COLOR)
         if orig is not None and orig.shape[:2] != arr.shape[:2]:
             orig = None
+
+    cross_alpha = None
+    if cross_bytes is not None:
+        cross = cv2.imdecode(np.frombuffer(cross_bytes, np.uint8), cv2.IMREAD_UNCHANGED)
+        if cross is not None and cross.shape[:2] == arr.shape[:2] and cross.ndim == 3:
+            cross_alpha = cross[..., 3]
 
     alpha = arr[..., 3]
 
@@ -96,19 +107,15 @@ def _mask_cleanup(png_bytes: bytes, orig_bytes: bytes | None = None) -> bytes:
     # Нижняя широкая линия товара (подол)
     spans = opened.sum(axis=1) / 255
     max_span = float(spans.max()) if spans.size else 0.0
-    bottom = None
     wide_rows = np.array([], dtype=np.int64)
     if max_span > 0:
         wide_rows = np.where(spans >= 0.6 * max_span)[0]
-        if len(wide_rows):
-            bottom = int(wide_rows[-1]) + max(int(0.01 * arr.shape[0]), 2)
-            opened[bottom:, :] = 0
 
     # Возвращаем исходную альфу внутри восстановленной области
     dil = cv2.dilate(opened, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15)))
     arr[..., 3] = np.where(dil > 0, alpha, 0).astype(np.uint8)
 
-    # Цветовое удаление «хвоста»: зона от 1% выше подола, всё что совпало с фоном
+    # Хвост фона: тройное условие + условный жёсткий срез
     if orig is not None and len(wide_rows):
         bg_keys = _background_color_keys(orig)
         if bg_keys:
@@ -117,14 +124,21 @@ def _mask_cleanup(png_bytes: bytes, orig_bytes: bytes | None = None) -> bytes:
             is_bg = np.isin(okeys, np.array(sorted(bg_keys), dtype=np.int64))
 
             zone = np.zeros(alpha.shape, dtype=bool)
-            zs = max(int(wide_rows[-1]) - int(0.01 * arr.shape[0]), 0)
-            zone[zs:, :] = True
+            zone[int(wide_rows[-1]):, :] = True
 
-            arr[..., 3] = np.where(zone & is_bg, 0, arr[..., 3])
+            tail = zone & is_bg
+            if cross_alpha is not None:
+                tail = tail & (cross_alpha <= 60)
 
-    # Жёсткий срез ниже подола (страховка)
-    if bottom is not None:
-        arr[bottom:, :, 3] = 0
+            removed = int(tail.sum())
+            if removed:
+                arr[..., 3] = np.where(tail, 0, arr[..., 3])
+                logger.info("🧹 Хвост фона: удалено пикселей %d", removed)
+
+            # Жёсткий срез — только если хвост действительно был
+            if removed > int(0.005 * alpha.size):
+                bottom = int(wide_rows[-1]) + max(int(0.01 * arr.shape[0]), 2)
+                arr[bottom:, :, 3] = 0
 
     ok, enc = cv2.imencode(".png", arr)
     return enc.tobytes() if ok else png_bytes
@@ -133,10 +147,12 @@ def _mask_cleanup(png_bytes: bytes, orig_bytes: bytes | None = None) -> bytes:
 def _remove_sync(data: bytes) -> bytes:
     from rembg import remove
 
+    primary = None
+    primary_name = None
     best_bytes = None
     best_ratio = -1.0
 
-    for model in MODEL_CANDIDATES:
+    for model in PRIMARY_MODELS:
         try:
             out = remove(data, session=_get_session(model))
         except Exception as e:
@@ -146,19 +162,31 @@ def _remove_sync(data: bytes) -> bytes:
         ratio = _opaque_ratio(out)
         logger.info("🧠 Модель %s: маска %.1f%% кадра", model, ratio * 100)
 
-        # Первая же модель с хорошей маской — в работу (BiRefNet)
         if ratio >= MIN_GOOD_MASK_RATIO:
-            return _mask_cleanup(out, data)
+            primary = out
+            primary_name = model
+            break
 
         if ratio > best_ratio:
             best_ratio = ratio
             best_bytes = out
 
-    if best_bytes is None:
-        raise RuntimeError("Ни одна модель rembg не смогла вырезать товар")
+    if primary is None:
+        if best_bytes is None:
+            raise RuntimeError("Ни одна модель rembg не смогла вырезать товар")
+        logger.warning("⚠️ Маска меньше порога (%.1f%%), беру лучшую", best_ratio * 100)
+        primary = best_bytes
+        primary_name = "best-effort"
 
-    logger.warning("⚠️ Маска меньше порога (%.1f%%), беру лучшую", best_ratio * 100)
-    return _mask_cleanup(best_bytes, data)
+    # Кроссчек для удаления «хвоста» фона
+    cross = None
+    try:
+        cross = remove(data, session=_get_session(CROSS_MODEL))
+    except Exception as e:
+        logger.warning("⚠️ Кроссчек %s недоступен: %s", CROSS_MODEL, e)
+
+    logger.info("🧠 Primary-модель: %s", primary_name)
+    return _mask_cleanup(primary, data, cross)
 
 
 async def cutout_product(input_path: Path, output_path: Path) -> Path:

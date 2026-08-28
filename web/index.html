@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SellShot Studio — карточки товаров</title>
+<style>
+  body{font-family:system-ui,sans-serif;max-width:640px;margin:0 auto;padding:24px;background:#f4f4f5}
+  h1{font-size:24px} .card{background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+  label{display:block;margin:12px 0 4px;font-size:14px;color:#555}
+  input,select,button{width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:15px}
+  button{background:#2563eb;color:#fff;border:0;margin-top:16px;cursor:pointer}
+  button:disabled{opacity:.5}
+  #status{margin:12px 0;color:#555}
+  #out{width:100%;border-radius:8px;margin-top:12px;display:none}
+  .note{font-size:12px;color:#888;margin-top:8px}
+</style>
+</head>
+<body>
+<h1>🛍 SellShot Studio</h1>
+<div class="card">
+  <form id="f">
+    <label>Фото товара</label>
+    <input type="file" id="photo" accept="image/*" required>
+    <label>Профиль</label>
+    <select id="profile">
+      <option value="universal">Универсальный 1200×1200</option>
+      <option value="classifieds">Доски объявлений 1600×1200</option>
+    </select>
+    <label>Категория</label>
+    <select id="category">
+      <option value="clothes">Одежда</option>
+      <option value="shoes">Обувь</option>
+      <option value="bags">Сумки</option>
+      <option value="electronics">Техника</option>
+      <option value="other">Другое</option>
+    </select>
+    <label>Фон</label>
+    <select id="style">
+      <option value="studio">Студийный серый</option>
+      <option value="white">Белый</option>
+      <option value="beige">Бежевый</option>
+    </select>
+    <button id="btn">Сделать карточку</button>
+  </form>
+  <div id="status"></div>
+  <img id="out" alt="Результат">
+  <div class="note">Бесплатно с водяным знаком. Без знака и без лимита — в платных тарифах.</div>
+</div>
+<script>
+const f=document.getElementById('f'),btn=document.getElementById('btn'),
+      status=document.getElementById('status'),out=document.getElementById('out');
+f.onsubmit=async e=>{
+  e.preventDefault();
+  btn.disabled=true; out.style.display='none';
+  status.textContent='⏳ Загружаю фото...';
+  const fd=new FormData();
+  fd.append('photo',document.getElementById('photo').files[0]);
+  fd.append('profile',document.getElementById('profile').value);
+  fd.append('category',document.getElementById('category').value);
+  fd.append('style',document.getElementById('style').value);
+  try{
+    const r=await fetch('/api/generate',{method:'POST',body:fd});
+    if(!r.ok){status.textContent='⚠️ Ошибка загрузки: '+r.status;btn.disabled=false;return;}
+    const {task_id}=await r.json();
+    status.textContent='🎨 Генерирую карточку (30–90 сек)...';
+    const poll=setInterval(async()=>{
+      const t=await fetch('/api/task/'+task_id).then(x=>x.json());
+      if(t.status==='done'){
+        clearInterval(poll);
+        out.src=t.result_url+'?'+Date.now();
+        out.style.display='block';
+        status.textContent='✅ Готово!';
+        btn.disabled=false;
+      }else if(t.status==='error'){
+        clearInterval(poll);
+        status.textContent='❌ Ошибка: '+t.error;
+        btn.disabled=false;
+      }
+    },2000);
+  }catch(err){
+    status.textContent='❌ Сбой сети';
+    btn.disabled=false;
+  }
+};
+</script>
+</body>
+</html>
