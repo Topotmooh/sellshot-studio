@@ -1,0 +1,14 @@
+[Unit]
+Description=SellShot Web MVP
+After=network.target
+
+[Service]
+User=deploy
+WorkingDirectory=/home/deploy/sellshot-studio
+EnvironmentFile=/home/deploy/sellshot-studio/.env
+ExecStart=/home/deploy/sellshot-studio/.venv/bin/python -m uvicorn api.server:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

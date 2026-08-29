@@ -1,12 +1,35 @@
+# ===== Python =====
 .venv/
 venv/
 __pycache__/
 *.pyc
+*.pyo
+
+# ===== Секреты =====
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ===== Модели (никогда в git) =====
+*.onnx
+.u2net/
+
+# ===== Данные и логи (ПДн, фото пользователей) =====
 data/
 logs/
+backups/
+*.log
+*.db
+
+# ===== Тесты (приватные фото) =====
 test_results/
 tests/photos/
+
+# ===== Архивы и сборка =====
 *.zip
+
+# ===== Редакторы =====
 .vscode/
-deploy/*.log
+.idea/
