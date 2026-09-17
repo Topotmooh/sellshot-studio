@@ -9,6 +9,12 @@ from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+# ===== FDE IMPROVEMENT: Абсолютные пути =====
+# Определяем корень проекта (папка, где лежит config.py)
+# Это гарантирует, что пути будут работать независимо от того, откуда запущен скрипт
+BASE_DIR = Path(__file__).resolve().parent
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -18,7 +24,8 @@ class Settings(BaseSettings):
     )
 
     # ========== Telegram ==========
-    BOT_TOKEN: str = ""
+    # FDE IMPROVEMENT: Обязательные поля (Field(...)) — приложение упадёт сразу, если нет токена
+    BOT_TOKEN: str = Field(..., repr=False)
     ADMIN_ID: int | None = None
     # Прокси для Telegram (нужен только при запуске из РФ без VPN)
     # Примеры: http://user:pass@host:port или socks5://user:pass@host:port
@@ -29,11 +36,12 @@ class Settings(BaseSettings):
     DEBUG: bool = False
 
     # ========== Storage ==========
-    DB_PATH: str = "data/app.db"
-    TEMP_DIR: str = "data/temp"
-    RESULTS_DIR: str = "data/results"
-    ASSETS_DIR: str = "assets"
-    BACKGROUNDS_DIR: str = "assets/backgrounds"
+    # FDE IMPROVEMENT: Абсолютные пути через BASE_DIR
+    DB_PATH: str = str(BASE_DIR / "data" / "app.db")
+    TEMP_DIR: str = str(BASE_DIR / "data" / "temp")
+    RESULTS_DIR: str = str(BASE_DIR / "data" / "results")
+    ASSETS_DIR: str = str(BASE_DIR / "assets")
+    BACKGROUNDS_DIR: str = str(BASE_DIR / "assets" / "backgrounds")
 
     # ========== Limits & watermark ==========
     FREE_DAILY_LIMIT: int = 5
@@ -54,6 +62,7 @@ class Settings(BaseSettings):
     # ========== AI ==========
     # local | sber | yandex | aidentika
     AI_PROVIDER: str = "local"
+    # FDE IMPROVEMENT: Все API-ключи обязательные и скрытые в repr
     SBER_CLIENT_ID: str = Field(default="", repr=False)
     SBER_CLIENT_SECRET: str = Field(default="", repr=False)
     YANDEX_API_KEY: str = Field(default="", repr=False)
@@ -64,7 +73,8 @@ class Settings(BaseSettings):
 
     # ========== Logging ==========
     LOG_LEVEL: str = "INFO"
-    LOG_FILE: str = "logs/bot.log"
+    # FDE IMPROVEMENT: Абсолютный путь к логам
+    LOG_FILE: str = str(BASE_DIR / "logs" / "bot.log")
 
     @property
     def enabled_profiles_list(self) -> list[str]:
@@ -93,6 +103,17 @@ class Settings(BaseSettings):
         if value not in ("local", "sber", "yandex", "aidentika"):
             raise ValueError(f"Неизвестный AI-провайдер: {value}")
         return value
+
+    # FDE IMPROVEMENT: Валидация обязательных полей в runtime
+    @field_validator("BOT_TOKEN")
+    @classmethod
+    def validate_bot_token(cls, value: str) -> str:
+        if not value or value.strip() == "":
+            raise ValueError(
+                "BOT_TOKEN не установлен! Создайте файл .env и добавьте токен бота. "
+                "Скопируйте .env.example в .env и заполните значения."
+            )
+        return value.strip()
 
 
 # Инициализация настроек
@@ -126,5 +147,7 @@ logging.basicConfig(
 
 logger = logging.getLogger("sellshot")
 logger.info("✅ Конфигурация загружена: %s", settings.APP_NAME)
+logger.debug("📁 Базовая директория: %s", BASE_DIR)
+logger.debug("📁 Путь к БД: %s", settings.DB_PATH)
 
 __all__ = ["settings", "logger"]
