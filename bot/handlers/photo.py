@@ -1,206 +1,286 @@
-"""Приём фото, валидация и сборка карточки + комплаенс-блок 289-ФЗ."""
+"""Хендлеры обработки фото от пользователей."""
 from __future__ import annotations
 
-import asyncio
-import html
-import re
+import uuid
+from datetime import date
+from pathlib import Path
 
-from aiogram import Bot, F, Router, types
-from aiogram.fsm.context import FSMContext
-from aiogram.types import FSInputFile
+from aiogram import Router
+from aiogram.filters import Command
+from aiogram.types import Message, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 
-from ai.base_provider import generate_background
 from config import logger, settings
 from core.profiles import get_profile
-from core.states import CardStates
-from db import database as db
-from services import compositor, limits, segmenter, storage, validator, watermark
+from services.compositor import compose_card
+from services.segmenter import cutout_product
+from services.compliance import (
+    generate_avito_description,
+    generate_youla_description,
+    generate_vk_description,
+    generate_gde_description,
+    generate_barahla_description,
+    generate_kupipanda_description,
+    generate_vkupiprodai_description,
+    generate_yandex_description,
+    generate_meshok_description,
+    generate_looton_description,
+)
+from bot.webapp_url import get_web_app_url
 
 router = Router()
 
-# Защита от поддельных callback_data: только безопасные символы
-_SAFE_VALUE = re.compile(r"[a-z0-9_]{1,32}")
 
-# Лок «одна обработка на пользователя»: не даём заспамить CPU-очередь
-_processing_users: set[int] = set()
+# ===== ЛИМИТЫ =====
 
-
-def _safe_profile(raw: object) -> str:
-    if isinstance(raw, str) and _SAFE_VALUE.fullmatch(raw):
-        return raw
-    return settings.DEFAULT_PROFILE
+daily_usage: dict[int, dict] = {}
 
 
-def _safe_category(raw: object) -> str:
-    if isinstance(raw, str) and _SAFE_VALUE.fullmatch(raw):
-        return raw
-    return "other"
+def get_daily_count(user_id: int) -> int:
+    today = date.today().isoformat()
+    user_data = daily_usage.get(user_id, {})
+    if user_data.get("date") != today:
+        daily_usage[user_id] = {"count": 0, "date": today}
+        return 0
+    return user_data.get("count", 0)
 
 
-@router.message(CardStates.waiting_photo, F.photo)
-async def photo_received(message: types.Message, state: FSMContext, bot: Bot) -> None:
-    data = await state.get_data()
-    profile = get_profile(_safe_profile(data.get("profile")))
-    category = _safe_category(data.get("category"))
-
-    # 0. Проверка лимита
-    allowed, used, limit = await limits.check_limit(message.from_user.id)
-    if not allowed:
-        await message.answer(
-            f"⛔ Дневной лимит исчерпан: {limit} фото.\n\n"
-            "Лимит сбрасывается каждый день в 00:00 (UTC).\n"
-            "Платные тарифы без лимита — скоро."
-        )
-        return
-
-    # 0.5. Лок: не больше одной одновременной обработки на пользователя
-    user_id = message.from_user.id
-    if user_id in _processing_users:
-        await message.answer("⏳ Уже обрабатываю предыдущее фото — подожди немного.")
-        return
-    _processing_users.add(user_id)
-
-    try:
-        photo = message.photo[-1]
-
-        # 1. Проверка размера до скачивания
-        try:
-            validator.check_size_before_download(photo.file_size)
-        except validator.ValidationError as e:
-            await message.answer(f"⚠️ {e}")
-            return
-
-        # 2. Сохраняем под случайным именем
-        saved_path = storage.new_temp_path(suffix=".jpg")
-
-        try:
-            await bot.download(photo, destination=str(saved_path))
-        except Exception:
-            logger.exception("Не удалось скачать фото")
-            storage.safe_unlink(saved_path)
-            await message.answer("❌ Не удалось скачать фото. Попробуй ещё раз.")
-            return
-
-        # 3. Проверка реального файла
-        try:
-            validator.check_file_after_download(saved_path)
-        except validator.ValidationError as e:
-            storage.safe_unlink(saved_path)
-            await message.answer(f"⚠️ {e}")
-            return
-
-        # 4. Используем оригинальное фото
-        processing_path = saved_path
-
-        await state.update_data(photo_path=str(processing_path))
-
-        # 5. Вырезание товара
-        status = await message.answer("⏳ Вырезаю товар с фона...")
-
-        cutout_path = storage.new_temp_path(suffix=".png")
-
-        try:
-            await segmenter.cutout_product(processing_path, cutout_path)
-        except (asyncio.TimeoutError, TimeoutError):
-            storage.safe_unlink(cutout_path)
-            await status.edit_text(
-                "⏰ Обработка заняла слишком много времени. Попробуй фото попроще."
-            )
-            return
-        except Exception:
-            logger.exception("Ошибка вырезания товара")
-            storage.safe_unlink(cutout_path)
-            await status.edit_text("❌ Не удалось вырезать товар. Попробуй другое фото.")
-            return
-
-        await state.update_data(cutout_path=str(cutout_path))
-
-        # 6. AI-фон (если подключён), иначе локальный
-        background_path = None
-        if settings.AI_PROVIDER in ("yandex", "sber"):
-            await status.edit_text("🎨 Генерирую AI-фон...")
-            background_path = await generate_background(
-                profile.output_width,
-                profile.output_height,
-                category,
-                profile.ai_style,
-            )
-            if background_path is None:
-                await status.edit_text("🎨 AI-фон недоступен, использую студийный фон.")
-
-        # 7. Сборка карточки
-        await status.edit_text("🧩 Собираю карточку: тень, размер, формат...")
-
-        result_path = storage.new_result_path(suffix=".jpg")
-
-        try:
-            await compositor.compose_card(
-                cutout_path,
-                result_path,
-                profile,
-                category,
-                background_path,
-            )
-        except Exception:
-            logger.exception("Ошибка сборки карточки")
-            storage.safe_unlink(result_path)
-            await status.edit_text("❌ Не удалось собрать карточку. Попробуй другое фото.")
-            return
-        finally:
-            if background_path is not None:
-                storage.safe_unlink(background_path)
-
-        # 8. Водяной знак для бесплатных
-        if settings.ENABLE_WATERMARK and not await limits.is_premium_user(user_id):
-            watermark.watermark_file(result_path, settings.WATERMARK_TEXT)
-
-        # 9. Учёт использования
-        await limits.consume(
-            user_id,
-            profile.key,
-            category,
-            settings.AI_PROVIDER != "local",
-        )
-
-        await state.update_data(result_path=str(result_path))
-        await status.edit_text("✅ Карточка готова! Отправляю.")
-
-        # 10. Комплаенс-блок 289-ФЗ (если заполнен паспорт продавца)
-        passport = await db.get_passport(user_id)
-        compliance = ""
-        if passport:
-            compliance = (
-                "\n\n👤 Продавец: " + html.escape(passport["name"]) +
-                "\n📎 Статус: " + html.escape(passport["status"]) +
-                " · Город: " + html.escape(passport["city"]) +
-                "\nℹ️ Информация о продавце указана в соответствии с 289-ФЗ (с 01.10.2026)."
-            )
-
-        await message.answer_photo(
-            FSInputFile(str(result_path), filename="card.jpg"),
-            caption=(
-                "🛍 Готовая карточка.\n\n"
-                f"Профиль: {profile.display_name}\n"
-                f"Категория: {category}\n"
-                f"Использовано сегодня: {used + 1} из {limit if limit else '∞'}"
-                + compliance +
-                "\n\nБез водяного знака и без лимита — в платных тарифах (скоро)."
-            ),
-        )
-    finally:
-        # Лок снимается ЛЮБЫМ выходом из обработки
-        _processing_users.discard(user_id)
+def increment_daily_count(user_id: int) -> int:
+    today = date.today().isoformat()
+    if user_id not in daily_usage or daily_usage[user_id]["date"] != today:
+        daily_usage[user_id] = {"count": 0, "date": today}
+    daily_usage[user_id]["count"] += 1
+    return daily_usage[user_id]["count"]
 
 
-@router.message(F.document)
-async def document_hint(message: types.Message) -> None:
-    await message.answer(
-        "📄 Ты отправил файл документом.\n\n"
-        "Отправь фото как изображение (не как файл), "
-        "чтобы я получил его в хорошем качестве."
+# ===== ТЕКСТЫ =====
+
+def generate_description_text(category: str = "universal") -> str:
+    """Описание для Авито (основная площадка)."""
+    templates = {
+        "clothing": {
+            "title": "Стильная одежда в отличном состоянии",
+            "features": [
+                "✅ Материал: высококачественная ткань",
+                "✅ Размер: уточняйте в ЛС",
+                "✅ Состояние: новое/отличное",
+            ],
+        },
+        "shoes": {
+            "title": "Обувь в отличном состоянии",
+            "features": [
+                "✅ Материал: натуральная кожа/экокожа",
+                "✅ Размер: уточняйте в ЛС",
+                "✅ Состояние: новое/отличное",
+            ],
+        },
+        "bags": {
+            "title": "Сумка стильная и вместительная",
+            "features": [
+                "✅ Материал: премиум экокожа",
+                "✅ Размеры: уточняйте в ЛС",
+                "✅ Состояние: новое/отличное",
+            ],
+        },
+        "universal": {
+            "title": "Товар в отличном состоянии",
+            "features": [
+                "✅ Качество: премиум",
+                "✅ Состояние: новое/отличное",
+                "✅ Комплектация: полная",
+            ],
+        },
+    }
+
+    tpl = templates.get(category, templates["universal"])
+
+    return (
+        f"🔥 {tpl['title']}\n\n"
+        + "\n".join(tpl["features"])
+        + f"\n\n{generate_avito_description()}\n\n"
+        f"📞 Звоните или пишите в ЛС — отвечу быстро!"
     )
 
 
-@router.message(F.photo)
-async def photo_without_flow(message: types.Message) -> None:
-    await message.answer("Сначала выбери тип карточки — нажми /start")
+def get_platforms_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🟢 Авито", callback_data="platform_avito"),
+            InlineKeyboardButton(text="🔴 Юла", callback_data="platform_youla"),
+        ],
+        [
+            InlineKeyboardButton(text="🔵 VK Маркет", callback_data="platform_vk"),
+            InlineKeyboardButton(text="🟡 Яндекс", callback_data="platform_yandex"),
+        ],
+        [
+            InlineKeyboardButton(text="🟢 gde.ru", callback_data="platform_gde"),
+            InlineKeyboardButton(text="🟠 barahla", callback_data="platform_barahla"),
+        ],
+        [
+            InlineKeyboardButton(text="🟣 kupipanda", callback_data="platform_kupipanda"),
+            InlineKeyboardButton(text="🔵 vkupiprodai", callback_data="platform_vkupiprodai"),
+        ],
+        [
+            InlineKeyboardButton(text="🟠 Мешок", callback_data="platform_meshok"),
+            InlineKeyboardButton(text="🔴 Looton", callback_data="platform_looton"),
+        ],
+    ])
+
+
+# ===== ХЕНДЛЕРЫ =====
+
+@router.message(Command("photo"))
+async def cmd_photo(message: Message):
+    text = (
+        "📸 <b>Загрузка фото для обработки:</b>\n\n"
+        "1. Отправь мне фото товара (JPG/PNG до 20 МБ)\n"
+        "2. Я обработаю его и создам студийную карточку\n"
+        "3. Получи готовое фото + текст описания\n\n"
+        f"🆓 Бесплатно: {settings.FREE_DAILY_LIMIT} карточек в день\n"
+        f"💎 Пакет 10 карточек: {settings.PRICE_PACK_10} ₽\n\n"
+        "Просто отправь фото — я всё сделаю сам!"
+    )
+    await message.answer(text, parse_mode="HTML")
+
+
+@router.message(lambda m: m.photo and not m.text)
+async def handle_photo(message: Message):
+    user_id = message.from_user.id
+    user_name = message.from_user.first_name or "Селлер"
+
+    daily_count = get_daily_count(user_id)
+    if daily_count >= settings.FREE_DAILY_LIMIT:
+        text = (
+            f"⚠️ {user_name}, ты использовал все {settings.FREE_DAILY_LIMIT} "
+            f"бесплатных карточек сегодня.\n\n"
+            f"💎 Купи пакет 10 карточек за {settings.PRICE_PACK_10} ₽ — "
+            f"и продолжай без ограничений!\n\n"
+            f"Или открой Mini App 👇"
+        )
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🚀 Открыть Mini App",
+                    web_app=WebAppInfo(url=get_web_app_url())
+                )
+            ],
+            [
+                InlineKeyboardButton(text="💎 Купить пакет", callback_data="buy_pack_10")
+            ],
+        ])
+        await message.answer(text, reply_markup=keyboard)
+        return
+
+    photo = message.photo[-1]
+    file = await message.bot.get_file(photo.file_id)
+
+    unique_id = uuid.uuid4().hex[:12]
+    orig_path = Path(settings.TEMP_DIR) / f"{unique_id}_orig.jpg"
+    cutout_path = Path(settings.TEMP_DIR) / f"{unique_id}_cutout.png"
+    result_path = Path(settings.RESULTS_DIR) / f"{unique_id}_final.jpg"
+
+    await message.bot.download_file(file.file_path, orig_path)
+    logger.info("📥 Получено фото от %s: %s", user_id, orig_path.name)
+
+    status_msg = await message.answer(
+        "⏳ Обрабатываю фото...\n"
+        "• Удаляю фон\n"
+        "• Накладываю студийный свет\n"
+        "• Добавляю тень\n\n"
+        "Обычно занимает 30–60 секунд"
+    )
+
+    try:
+        profile = get_profile("universal")
+
+        await cutout_product(orig_path, cutout_path)
+        await compose_card(
+            cutout_path=cutout_path,
+            output_path=result_path,
+            profile=profile,
+            category="universal",
+        )
+
+        new_count = increment_daily_count(user_id)
+
+        caption = (
+            f"✅ Готово, {user_name}!\n\n"
+            f"📊 Использовано сегодня: {new_count}/{settings.FREE_DAILY_LIMIT}\n\n"
+            f"📝 <b>Готовое описание для Авито:</b>\n"
+            f"{generate_description_text()}\n\n"
+            f"📱 Выбери площадку для публикации 👇"
+        )
+
+        photo_file = FSInputFile(result_path)
+        await message.answer_photo(
+            photo=photo_file,
+            caption=caption,
+            parse_mode="HTML",
+            reply_markup=get_platforms_keyboard(),
+        )
+        logger.info("✅ Карточка создана для %s: %s", user_id, result_path.name)
+
+    except Exception as e:
+        logger.error("❌ Ошибка обработки для %s: %s", user_id, e, exc_info=True)
+        await message.answer(
+            f"😔 Ошибка при обработке фото.\n\n"
+            f"Попробуй ещё раз или напиши админу: @{settings.ADMIN_USERNAME}"
+        )
+
+    finally:
+        try:
+            await status_msg.delete()
+        except Exception:
+            pass
+        for temp_file in [orig_path, cutout_path]:
+            if temp_file.exists():
+                try:
+                    temp_file.unlink()
+                except Exception:
+                    pass
+
+
+# ===== КНОПКИ ПЛОЩАДОК =====
+
+PLATFORM_DESCRIPTIONS = {
+    "platform_avito": ("Авито", generate_avito_description),
+    "platform_youla": ("Юла", generate_youla_description),
+    "platform_vk": ("VK Маркет", generate_vk_description),
+    "platform_yandex": ("Яндекс Объявления", generate_yandex_description),
+    "platform_gde": ("gde.ru", generate_gde_description),
+    "platform_barahla": ("barahla.net", generate_barahla_description),
+    "platform_kupipanda": ("kupipanda.ru", generate_kupipanda_description),
+    "platform_vkupiprodai": ("vkupiprodai.ru", generate_vkupiprodai_description),
+    "platform_meshok": ("Мешок", generate_meshok_description),
+    "platform_looton": ("Looton", generate_looton_description),
+}
+
+
+@router.callback_query(lambda c: c.data in PLATFORM_DESCRIPTIONS)
+async def callback_platform(callback):
+    platform_name, generator = PLATFORM_DESCRIPTIONS[callback.data]
+    text = (
+        f"📝 <b>Описание для {platform_name}:</b>\n\n"
+        f"{generator()}\n\n"
+        f"💡 Скопируй текст и вставь в объявление на {platform_name}."
+    )
+    await callback.message.answer(text, parse_mode="HTML")
+    await callback.answer(f"Описание для {platform_name} готово!")
+
+
+@router.callback_query(lambda c: c.data == "noop")
+async def callback_noop(callback):
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data == "buy_pack_10")
+async def callback_buy_pack(callback):
+    text = (
+        "💎 <b>Покупка пакета 10 карточек</b>\n\n"
+        f"Стоимость: {settings.PRICE_PACK_10} ₽\n\n"
+        f"Для оплаты переведи сумму на СБП:\n"
+        f"📱 +7 (XXX) XXX-XX-XX\n\n"
+        f"После оплаты напиши админу: @{settings.ADMIN_USERNAME}\n\n"
+        f"⚠️ В следующей версии будет автоматическая оплата через ЮKassa."
+    )
+    await callback.message.answer(text, parse_mode="HTML")
+    await callback.answer()

@@ -18,7 +18,7 @@ flatbuffers==25.12.19
 frozenlist==1.8.0
 h11==0.16.0
 idna==3.18
-ImageIO==2.37.4
+Imageio==2.37.4
 jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
 lazy-loader==0.5

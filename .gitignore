@@ -32,4 +32,6 @@ tests/photos/
 
 # ===== Редакторы =====
 .vscode/
-.idea/
+.idea/tunnel_url.txt
+stop_flag.txt
+*.log

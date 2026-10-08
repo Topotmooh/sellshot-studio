@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SellShot Studio</title>
+
+    <!-- PWA -->
+    <link rel="manifest" href="/manifest.webmanifest">
+    <meta name="theme-color" content="#FF5722">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="SellShot">
+    <link rel="apple-touch-icon" href="/pwa/icons/icon-192.png">
+    <link rel="icon" type="image/png" href="/pwa/icons/icon-192.png">
+
+    <!-- Cropper.js -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js"></script>
+
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+        :root {
+            --bg: #0A0A0A;
+            --card: #141414;
+            --card-border: #262626;
+            --text: #FFFFFF;
+            --text-secondary: #8A8A8A;
+            --accent: #FF5722;
+            --accent-hover: #FF6E3F;
+        }
+
+        body {
+            background-color: var(--tg-theme-bg-color, var(--bg));
+            color: var(--tg-theme-text-color, var(--text));
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+            font-size: 16px;
+            line-height: 1.5;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .container { max-width: 480px; margin: 0 auto; padding: 20px 16px 40px; }
+
+        .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; padding-top: 8px; }
+        .logo { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 18px; letter-spacing: -0.5px; }
+        .logo-icon { width: 32px; height: 32px; background: var(--accent); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+        .user-badge { background: var(--card); border: 1px solid var(--card-border); padding: 6px 12px; border-radius: 20px; font-size: 13px; color: var(--text-secondary); }
+        .user-badge strong { color: var(--text); font-weight: 600; }
+
+        .hero { margin-bottom: 20px; }
+        .hero h1 { font-size: 28px; font-weight: 700; letter-spacing: -1px; line-height: 1.2; margin-bottom: 8px; }
+        .hero p { color: var(--text-secondary); font-size: 15px; }
+        .hero .accent { color: var(--accent); }
+
+        .card { background: var(--card); border: 1px solid var(--card-border); border-radius: 16px; padding: 20px; margin-bottom: 16px; }
+        .card-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-secondary); margin-bottom: 12px; }
+
+        .upload-zone { border: 2px dashed var(--card-border); border-radius: 16px; padding: 32px 24px; text-align: center; cursor: pointer; transition: all 0.2s ease; background: var(--card); margin-bottom: 12px; }
+        .upload-zone:hover { border-color: var(--accent); background: rgba(255, 87, 34, 0.05); }
+        .upload-zone.camera { border-color: var(--accent); background: rgba(255, 87, 34, 0.05); }
+        .upload-zone.camera:hover { background: rgba(255, 87, 34, 0.1); border-color: var(--accent-hover); }
+        .upload-icon { font-size: 40px; margin-bottom: 8px; display: block; }
+        .upload-title { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+        .upload-subtitle { font-size: 13px; color: var(--text-secondary); }
+
+        .cropper-container-wrapper {
+            background: #000;
+            border-radius: 12px;
+            overflow: hidden;
+            margin-bottom: 16px;
+            max-height: 400px;
+        }
+        .cropper-container-wrapper img {
+            max-width: 100%;
+            display: block;
+        }
+
+        .btn { width: 100%; padding: 16px; border: none; border-radius: 12px; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s ease; font-family: inherit; margin-bottom: 8px; }
+        .btn-primary { background: var(--accent); color: white; }
+        .btn-primary:hover { background: var(--accent-hover); transform: translateY(-1px); }
+        .btn-secondary { background: transparent; color: var(--text-secondary); border: 1px solid var(--card-border); }
+        .btn-secondary:hover { color: var(--text); border-color: var(--text-secondary); }
+
+        /* Форма */
+        .form-group { margin-bottom: 16px; }
+        .form-label { display: block; font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
+        .form-input, .form-select, .form-textarea {
+            width: 100%;
+            padding: 12px 14px;
+            background: var(--bg);
+            border: 1px solid var(--card-border);
+            border-radius: 10px;
+            color: var(--text);
+            font-size: 15px;
+            font-family: inherit;
+            transition: border-color 0.2s;
+        }
+        .form-input:focus, .form-select:focus, .form-textarea:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+        .form-textarea { resize: vertical; min-height: 80px; }
+        .form-hint { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
+
+        .platforms-grid { display: grid; grid-template-columns: 1fr; gap: 8px; }
+        .platform-btn { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 12px; border: 1px solid var(--card-border); background: var(--card); color: var(--text); font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s ease; font-family: inherit; }
+        .platform-btn:hover { transform: translateX(4px); }
+        .platform-icon { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; color: white; flex-shrink: 0; }
+        .platform-arrow { margin-left: auto; color: var(--text-secondary); font-size: 18px; }
+
+        .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; background: var(--bg); padding: 4px; border-radius: 10px; }
+        .tab { padding: 8px 12px; border: none; background: transparent; color: var(--text-secondary); font-size: 12px; font-weight: 600; border-radius: 8px; cursor: pointer; transition: all 0.2s ease; font-family: inherit; }
+        .tab.active { background: var(--card); color: var(--text); box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+
+        .description-box { background: var(--bg); border: 1px solid var(--card-border); border-radius: 12px; padding: 14px; font-size: 14px; line-height: 1.6; white-space: pre-wrap; max-height: 240px; overflow-y: auto; position: relative; }
+        .copy-btn { position: absolute; top: 8px; right: 8px; background: var(--card); border: 1px solid var(--card-border); color: var(--text); padding: 6px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+        .copy-btn:hover { background: var(--accent); border-color: var(--accent); }
+
+        .stats-row { display: flex; justify-content: space-around; padding: 16px 0; border-top: 1px solid var(--card-border); margin-top: 8px; }
+        .stat { text-align: center; }
+        .stat-value { font-size: 18px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+        .stat-label { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+
+        .loader-container { text-align: center; padding: 48px 24px; }
+        .loader { width: 40px; height: 40px; border: 3px solid var(--card-border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 16px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loader-text { font-size: 15px; font-weight: 500; margin-bottom: 4px; }
+        .loader-subtext { font-size: 13px; color: var(--text-secondary); }
+
+        .result-image { width: 100%; border-radius: 12px; margin-bottom: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
+        .section-title { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-secondary); margin-bottom: 12px; margin-top: 24px; }
+
+        .hidden { display: none !important; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .fade-in { animation: fadeIn 0.3s ease; }
+
+        @media (prefers-color-scheme: light) {
+            :root { --bg: #F5F5F7; --card: #FFFFFF; --card-border: #E5E5E5; --text: #000000; --text-secondary: #6B6B6B; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+
+        <!-- HEADER -->
+        <div class="header">
+            <div class="logo">
+                <div class="logo-icon">📸</div>
+                <span>SellShot</span>
+            </div>
+            <div class="user-badge">Привет, <strong id="userName">Селлер</strong></div>
+        </div>
+
+        <!-- HERO -->
+        <div class="hero">
+            <h1>Студийные карточки <span class="accent">с ИИ</span></h1>
+            <p>Профессиональные фото для Авито, Юлы, VK и 7 других площадок</p>
+        </div>
+
+        <!-- Кнопка установки PWA -->
+        <button id="installBtn" class="btn btn-secondary hidden" style="margin-bottom: 16px;">
+             Установить на главный экран
+        </button>
+
+        <!-- СОСТОЯНИЕ 1: ЗАГРУЗКА -->
+        <div id="uploadState">
+            <div class="upload-zone" onclick="document.getElementById('fileInput').click()">
+                <span class="upload-icon">🖼️</span>
+                <div class="upload-title">Выбрать из галереи</div>
+                <div class="upload-subtitle">JPG, PNG до 20 МБ</div>
+                <input type="file" id="fileInput" accept="image/*" class="hidden" onchange="handleFileSelect(event)">
+            </div>
+
+            <div class="upload-zone camera" onclick="document.getElementById('cameraInput').click()">
+                <span class="upload-icon"></span>
+                <div class="upload-title">Сфотографировать</div>
+                <div class="upload-subtitle">Сразу откроет камеру телефона</div>
+                <input type="file" id="cameraInput" accept="image/*" capture="environment" class="hidden" onchange="handleFileSelect(event)">
+            </div>
+
+            <div class="stats-row">
+                <div class="stat">
+                    <div class="stat-value" id="statCards">1,240</div>
+                    <div class="stat-label">карточек</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value" id="statHours">620ч</div>
+                    <div class="stat-label">сэкономлено</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value">98%</div>
+                    <div class="stat-label">модерация</div>
+                </div>
+            </div>
+
+            <div class="card" style="margin-top: 16px;">
+                <div class="card-label">Отзывы селлеров</div>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <div style="font-size: 14px;">
+                        <span style="color: #FFD700;">★★★★★</span>
+                        <span style="opacity: 0.8;"> "Сделал 50 карточек за вечер, все прошли модерацию!"</span>
+                        <span style="font-size: 12px; opacity: 0.5;">— Анна, Краснодар</span>
+                    </div>
+                    <div style="font-size: 14px;">
+                        <span style="color: #FFD700;">★★★★★</span>
+                        <span style="opacity: 0.8;"> "Готовый текст под каждую площадку — гениально!"</span>
+                        <span style="font-size: 12px; opacity: 0.5;">— Дмитрий, Ростов</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- СОСТОЯНИЕ 2: КАДРИРОВАНИЕ -->
+        <div id="cropState" class="hidden">
+            <div class="card-label">Обрежьте лишнее</div>
+            <div class="cropper-container-wrapper">
+                <img id="cropImage" src="">
+            </div>
+            <button class="btn btn-primary" onclick="goToForm()">Далее: заполнить информацию</button>
+            <button class="btn btn-secondary" onclick="resetApp()">Выбрать другое фото</button>
+        </div>
+
+        <!-- СОСТОЯНИЕ 3: ФОРМА -->
+        <div id="formState" class="hidden">
+            <div class="card-label">Информация о товаре и продавце</div>
+            
+            <div class="form-group">
+                <label class="form-label">Категория товара *</label>
+                <select id="category" class="form-select">
+                    <option value="clothing">Одежда</option>
+                    <option value="shoes">Обувь</option>
+                    <option value="bags">Сумки и аксессуары</option>
+                    <option value="electronics">Электроника</option>
+                    <option value="furniture">Мебель</option>
+                    <option value="kids">Детские товары</option>
+                    <option value="sports">Спорт и отдых</option>
+                    <option value="auto">Автозапчасти</option>
+                    <option value="home">Товары для дома</option>
+                    <option value="beauty">Красота и здоровье</option>
+                    <option value="books">Книги</option>
+                    <option value="hobby">Хобби и творчество</option>
+                    <option value="universal">Другое</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Название товара *</label>
+                <input type="text" id="productName" class="form-input" placeholder="Например: Куртка зимняя мужская">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Описание товара *</label>
+                <textarea id="productDescription" class="form-textarea" placeholder="Состояние, размер, материал, особенности..."></textarea>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Город *</label>
+                <input type="text" id="city" class="form-input" placeholder="Например: Краснодар">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Телефон для связи *</label>
+                <input type="tel" id="phone" class="form-input" placeholder="+7 (900) 123-45-67">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Адрес (необязательно)</label>
+                <input type="text" id="address" class="form-input" placeholder="Район или улица">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">ИНН (необязательно, для юрлиц)</label>
+                <input type="text" id="inn" class="form-input" placeholder="10 или 12 цифр">
+            </div>
+
+            <button class="btn btn-primary" onclick="processImage()">🚀 Обработать фото</button>
+            <button class="btn btn-secondary" onclick="showState('cropState')">Назад к кадрированию</button>
+        </div>
+
+        <!-- СОСТОЯНИЕ 4: ОБРАБОТКА -->
+        <div id="loadingState" class="hidden">
+            <div class="loader-container">
+                <div class="loader"></div>
+                <div class="loader-text">ИИ обрабатывает фото...</div>
+                <div class="loader-subtext">Обычно 30–60 секунд</div>
+            </div>
+        </div>
+
+        <!-- СОСТОЯНИЕ 5: РЕЗУЛЬТАТ -->
+        <div id="resultState" class="hidden">
+            <img id="resultImage" class="result-image">
+
+            <div class="section-title">Опубликовать на площадке</div>
+            <div class="platforms-grid">
+                <button class="platform-btn" onclick="publishTo('avito')">
+                    <div class="platform-icon" style="background: #96E54D; color: #000;">A</div>
+                    <span>Авито</span>
+                    <span class="platform-arrow">→</span>
+                </button>
+                <button class="platform-btn" onclick="publishTo('youla')">
+                    <div class="platform-icon" style="background: #FF6B6B;">Y</div>
+                    <span>Юла</span>
+                    <span class="platform-arrow">→</span>
+                </button>
+                <button class="platform-btn" onclick="publishTo('vk')">
+                    <div class="platform-icon" style="background: #0077FF;">VK</div>
+                    <span>VK Маркет</span>
+                    <span class="platform-arrow">→</span>
+                </button>
+                <button class="platform-btn" onclick="publishTo('yandex')">
+                    <div class="platform-icon" style="background: #FFCC00; color: #000;">Я</div>
+                    <span>Яндекс Объявления</span>
+                    <span class="platform-arrow">→</span>
+                </button>
+                <button class="platform-btn" onclick="publishTo('gde')">
+                    <div class="platform-icon" style="background: #4CAF50;">G</div>
+                    <span>gde.ru</span>
+                    <span class="platform-arrow">→</span>
+                </button>
+                <button class="platform-btn" onclick="publishTo('barahla')">
+                    <div class="platform-icon" style="background: #FF9800;">B</div>
+                    <span>barahla.net</span>
+                    <span class="platform-arrow">→</span>
+                </button>
+                <button class="platform-btn" onclick="publishTo('kupipanda')">
+                    <div class="platform-icon" style="background: #9C27B0;">K</div>
+                    <span>kupipanda.ru</span>
+                    <span class="platform-arrow">→</span>
+                </button>
+                <button class="platform-btn" onclick="publishTo('vkupiprodai')">
+                    <div class="platform-icon" style="background: #3F51B5;">V</div>
+                    <span>vkupiprodai.ru</span>
+                    <span class="platform-arrow">→</span>
+                </button>
+                <button class="platform-btn" onclick="publishTo('meshok')">
+                    <div class="platform-icon" style="background: #FFA500;">M</div>
+                    <span>Мешок</span>
+                    <span class="platform-arrow">→</span>
+                </button>
+                <button class="platform-btn" onclick="publishTo('looton')">
+                    <div class="platform-icon" style="background: #E91E63;">L</div>
+                    <span>Looton</span>
+                    <span class="platform-arrow">→</span>
+                </button>
+            </div>
+
+            <div class="section-title">Готовое описание</div>
+            <div class="card" style="padding: 12px;">
+                <div class="tabs">
+                    <button class="tab active" onclick="showDescription('avito', this)">Авито</button>
+                    <button class="tab" onclick="showDescription('youla', this)">Юла</button>
+                    <button class="tab" onclick="showDescription('vk', this)">VK</button>
+                    <button class="tab" onclick="showDescription('yandex', this)">Яндекс</button>
+                    <button class="tab" onclick="showDescription('gde', this)">gde.ru</button>
+                    <button class="tab" onclick="showDescription('barahla', this)">barahla</button>
+                    <button class="tab" onclick="showDescription('kupipanda', this)">kupipanda</button>
+                    <button class="tab" onclick="showDescription('vkupiprodai', this)">vkupiprodai</button>
+                    <button class="tab" onclick="showDescription('meshok', this)">Мешок</button>
+                    <button class="tab" onclick="showDescription('looton', this)">Looton</button>
+                </div>
+                <div class="description-box">
+                    <button class="copy-btn" onclick="copyText()">Копировать</button>
+                    <p id="resultText"></p>
+                </div>
+            </div>
+
+            <button class="btn btn-primary" onclick="resetApp()" style="margin-top: 16px;">Сделать ещё одну</button>
+        </div>
+
+    </div>
+
+    <script>
+        let tg = null;
+        try {
+            tg = window.Telegram.WebApp;
+            tg.expand();
+        } catch (e) { console.log('TG not available'); }
+
+        try {
+            const user = tg?.initDataUnsafe?.user;
+            if (user?.first_name) {
+                document.getElementById('userName').innerText = user.first_name;
+            }
+        } catch (e) {}
+
+        async function loadStats() {
+            try {
+                const res = await fetch('/api/stats');
+                const stats = await res.json();
+                document.getElementById('statCards').innerText = stats.cards_made.toLocaleString();
+                document.getElementById('statHours').innerText = stats.hours_saved + 'ч';
+            } catch (e) {}
+        }
+        loadStats();
+
+        let selectedFile = null;
+        let cropper = null;
+        let descriptions = {
+            avito: '', youla: '', vk: '', yandex: '', gde: '',
+            barahla: '', kupipanda: '', vkupiprodai: '', meshok: '', looton: ''
+        };
+        let currentDesc = 'avito';
+
+        function showState(stateId) {
+            ['uploadState', 'cropState', 'formState', 'loadingState', 'resultState'].forEach(id => {
+                document.getElementById(id).classList.add('hidden');
+            });
+            const el = document.getElementById(stateId);
+            el.classList.remove('hidden');
+            el.classList.add('fade-in');
+        }
+
+        function handleFileSelect(event) {
+            selectedFile = event.target.files[0];
+            if (!selectedFile) return;
+
+            const reader = new FileReader();
+            reader.onload = e => {
+                const cropImage = document.getElementById('cropImage');
+                cropImage.src = e.target.result;
+                
+                if (cropper) cropper.destroy();
+                
+                cropper = new Cropper(cropImage, {
+                    aspectRatio: NaN,
+                    viewMode: 1,
+                    dragMode: 'move',
+                    autoCropArea: 0.9,
+                    restore: false,
+                    guides: true,
+                    center: true,
+                    highlight: false,
+                    cropBoxMovable: true,
+                    cropBoxResizable: true,
+                    toggleDragModeOnDblclick: false,
+                });
+                
+                showState('cropState');
+            };
+            reader.readAsDataURL(selectedFile);
+
+            document.getElementById('fileInput').value = '';
+            document.getElementById('cameraInput').value = '';
+        }
+
+        function goToForm() {
+            if (!cropper) return;
+            showState('formState');
+        }
+
+        function processImage() {
+            const category = document.getElementById('category').value;
+            const productName = document.getElementById('productName').value.trim();
+            const productDescription = document.getElementById('productDescription').value.trim();
+            const city = document.getElementById('city').value.trim();
+            const phone = document.getElementById('phone').value.trim();
+            const address = document.getElementById('address').value.trim();
+            const inn = document.getElementById('inn').value.trim();
+
+            if (!productName || !productDescription || !city || !phone) {
+                alert('Пожалуйста, заполните все обязательные поля (отмечены *)');
+                return;
+            }
+
+            if (!cropper) {
+                alert('Сначала загрузите и обрежьте фото');
+                return;
+            }
+
+            showState('loadingState');
+
+            const canvas = cropper.getCroppedCanvas({
+                maxWidth: 2048,
+                maxHeight: 2048,
+                imageSmoothingEnabled: true,
+                imageSmoothingQuality: 'high',
+            });
+
+            canvas.toBlob(async (blob) => {
+                const formData = new FormData();
+                formData.append('file', blob, 'cropped.jpg');
+                formData.append('category', category);
+                formData.append('product_name', productName);
+                formData.append('product_description', productDescription);
+                formData.append('city', city);
+                formData.append('phone', phone);
+                formData.append('address', address);
+                formData.append('inn', inn);
+
+                try {
+                    const res = await fetch(window.location.origin + '/api/process_image', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const data = await res.json();
+
+                    if (data.success) {
+                        document.getElementById('resultImage').src = window.location.origin + data.image_url;
+
+                        descriptions.avito = data.description_avito || '';
+                        descriptions.youla = data.description_youla || '';
+                        descriptions.vk = data.description_vk || '';
+                        descriptions.yandex = data.description_yandex || '';
+                        descriptions.gde = data.description_gde || '';
+                        descriptions.barahla = data.description_barahla || '';
+                        descriptions.kupipanda = data.description_kupipanda || '';
+                        descriptions.vkupiprodai = data.description_vkupiprodai || '';
+                        descriptions.meshok = data.description_meshok || '';
+                        descriptions.looton = data.description_looton || '';
+
+                        showDescription('avito', document.querySelector('.tab'));
+                        showState('resultState');
+
+                        if (tg?.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+                        loadStats();
+                    } else {
+                        throw new Error(data.error || 'Ошибка');
+                    }
+                } catch (error) {
+                    alert('Ошибка: ' + error.message);
+                    resetApp();
+                }
+            }, 'image/jpeg', 0.95);
+        }
+
+        function showDescription(platform, btn) {
+            currentDesc = platform;
+            document.getElementById('resultText').innerText = descriptions[platform];
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            if (btn) btn.classList.add('active');
+        }
+
+        function copyText() {
+            const text = descriptions[currentDesc];
+            if (!text) return;
+            navigator.clipboard.writeText(text).then(() => {
+                if (tg?.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+                const btn = document.querySelector('.copy-btn');
+                btn.innerText = '✓ Скопировано';
+                setTimeout(() => btn.innerText = 'Копировать', 2000);
+            });
+        }
+
+        function publishTo(platform) {
+            const text = descriptions[platform];
+            if (text) navigator.clipboard.writeText(text);
+            const urls = {
+                avito: 'https://www.avito.ru/seller/add',
+                youla: 'https://youla.ru/create',
+                vk: 'https://vk.com/market',
+                yandex: 'https://uslugi.yandex.ru/',
+                gde: 'https://gde.ru/',
+                barahla: 'https://www.barahla.net/',
+                kupipanda: 'https://kupipanda.ru/',
+                vkupiprodai: 'https://vkupiprodai.ru/',
+                meshok: 'https://meshok.net/selling.php',
+                looton: 'https://looton.ru/',
+            };
+            setTimeout(() => window.open(urls[platform], '_blank'), 300);
+        }
+
+        function resetApp() {
+            selectedFile = null;
+            if (cropper) { cropper.destroy(); cropper = null; }
+            document.getElementById('fileInput').value = '';
+            document.getElementById('cameraInput').value = '';
+            document.getElementById('productName').value = '';
+            document.getElementById('productDescription').value = '';
+            document.getElementById('city').value = '';
+            document.getElementById('phone').value = '';
+            document.getElementById('address').value = '';
+            document.getElementById('inn').value = '';
+            showState('uploadState');
+        }
+    </script>
+
+    <script>
+        let deferredPrompt = null;
+        const installBtn = document.getElementById('installBtn');
+
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            installBtn.classList.remove('hidden');
+        });
+
+        installBtn.addEventListener('click', async () => {
+            if (!deferredPrompt) return;
+            deferredPrompt.prompt();
+            const choice = await deferredPrompt.userChoice;
+            if (choice.outcome === 'accepted') installBtn.classList.add('hidden');
+            deferredPrompt = null;
+        });
+
+        window.addEventListener('appinstalled', () => installBtn.classList.add('hidden'));
+
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js').catch((err) => console.warn('SW error:', err));
+            });
+        }
+    </script>
+</body>
+</html>

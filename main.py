@@ -1,65 +1,70 @@
-"""SellShot Studio — точка входа."""
+"""SellShot Studio — главный файл запуска бота."""
 import asyncio
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent))
 
 from aiogram import Bot, Dispatcher
-from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
+from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.fsm.storage.memory import MemoryStorage
 
-from bot.handlers import admin, category, legal, passport, photo, profile, start
-from bot.middlewares.throttling import ThrottlingMiddleware
-from config import logger, settings
-from db import database as db
-from services import storage
+from config import settings, logger
+from bot.handlers import start, photo
 
 
-async def _cleanup_loop() -> None:
-    """Фото пользователей удаляются каждые 6 часов (старше 24 ч)."""
-    while True:
-        await asyncio.sleep(6 * 3600)
-        try:
-            n = storage.cleanup_old_temp()
-            if n:
-                logger.info("🧹 Очистка: удалено старых файлов: %d", n)
-        except Exception:
-            logger.exception("Сбой автоочистки")
+def resolve_proxy():
+    """Определяет прокси: Karing по умолчанию, 'direct' = без прокси."""
+    proxy = (settings.TELEGRAM_PROXY or "").strip()
+
+    # Пусто или заглушка -> Karing
+    if (not proxy) or ("NL_IP" in proxy):
+        proxy = "http://127.0.0.1:3067"
+
+    # Явное отключение
+    if proxy.lower() in ("direct", "none", "off"):
+        return None
+
+    return proxy
 
 
-async def main() -> None:
-    if not settings.BOT_TOKEN or ":" not in settings.BOT_TOKEN:
-        raise RuntimeError("BOT_TOKEN не задан в .env")
+async def main():
+    """Запуск бота."""
+    proxy = resolve_proxy()
 
-    await db.init_db()
+    if proxy:
+        logger.info("🔗 Используем прокси: %s", proxy)
+        session = AiohttpSession(proxy=proxy)
+    else:
+        logger.info("🔗 Прямое подключение (без прокси)")
+        session = AiohttpSession()
 
-    bot_kwargs = {
-        "token": settings.BOT_TOKEN,
-        "default": DefaultBotProperties(parse_mode=ParseMode.HTML),
-    }
-    if settings.TELEGRAM_PROXY:
-        bot_kwargs["proxy"] = settings.TELEGRAM_PROXY
-
-    bot = Bot(**bot_kwargs)
-    dp = Dispatcher()
-
-    # Флуд-защита на все сообщения и callback'и
-    dp.message.middleware(ThrottlingMiddleware())
-    dp.callback_query.middleware(ThrottlingMiddleware())
+    bot = Bot(token=settings.BOT_TOKEN, session=session)
+    dp = Dispatcher(storage=MemoryStorage())
 
     dp.include_router(start.router)
-    dp.include_router(profile.router)
-    dp.include_router(category.router)
     dp.include_router(photo.router)
-    dp.include_router(passport.router)
-    dp.include_router(legal.router)
-    dp.include_router(admin.router)
 
-    asyncio.create_task(_cleanup_loop())
+    logger.info("🤖 Бот запущен: %s", settings.APP_NAME)
+    logger.info("   Admin ID: %s", settings.ADMIN_ID)
 
-    logger.info("🚀 Бот запущен")
-    await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+    try:
+        await dp.start_polling(
+            bot,
+            allowed_updates=["message", "callback_query"],
+            timeout=60,
+        )
+    except Exception as e:
+        logger.error("❌ Ошибка polling: %s", e, exc_info=True)
+    finally:
+        await bot.session.close()
 
 
 if __name__ == "__main__":
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        pass
+        logger.info("🛑 Бот остановлен пользователем")
