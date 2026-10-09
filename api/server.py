@@ -17,8 +17,6 @@ from services.compositor import compose_card
 from services.segmenter import cutout_product
 
 
-# ================= ИНИЦИАЛИЗАЦИЯ =================
-
 app = FastAPI(
     title=settings.APP_NAME,
     description="API для генерации студийных карточек товаров",
@@ -42,8 +40,6 @@ app.mount("/static/results", StaticFiles(directory=settings.RESULTS_DIR), name="
 app.mount("/pwa", StaticFiles(directory="web/pwa"), name="pwa")
 
 
-# ================= PWA ROUTES =================
-
 @app.get("/manifest.webmanifest", include_in_schema=False)
 async def get_manifest():
     return FileResponse(
@@ -61,8 +57,6 @@ async def get_service_worker():
     )
 
 
-# ================= МОДЕЛИ =================
-
 class ProcessResult(BaseModel):
     success: bool
     image_url: str | None = None
@@ -79,8 +73,6 @@ class ProcessResult(BaseModel):
     error: str | None = None
 
 
-# ================= ГЕНЕРАЦИЯ ОПИСАНИЙ =================
-
 def generate_descriptions(
     category: str,
     product_name: str,
@@ -92,19 +84,16 @@ def generate_descriptions(
 ) -> dict[str, str]:
     """Генерирует описания для 10 площадок с данными продавца."""
     
-    # Базовая информация о товаре
     product_info = f"**{product_name}**\n\n{product_description}"
     
-    # Контактная информация (реальные данные из формы)
     contact_info = f"📞 Телефон: {phone}"
     if city:
-        contact_info += f"\n🏙️ Город: {city}"
+        contact_info += f"\n️ Город: {city}"
     if address:
         contact_info += f"\n Адрес: {address}"
     if inn:
         contact_info += f"\n🏢 ИНН: {inn}"
     
-    # Шаблоны для разных категорий (БЕЗ плейсхолдеров [город] и [телефон])
     category_templates = {
         "clothing": {
             "features": [
@@ -212,11 +201,10 @@ def generate_descriptions(
     tpl = category_templates.get(category, category_templates["universal"])
     features_text = "\n".join(tpl["features"])
 
-    # Описания для 10 площадок (БЕЗ дублирования контактов)
     desc_avito = (
-        f"🔥 {product_info}\n\n"
+        f" {product_info}\n\n"
         f"{features_text}\n\n"
-        f"📦 Доставка: по договорённости\n"
+        f" Доставка: по договорённости\n"
         f"💰 Оплата: наличные / перевод\n"
         f"📦 Самовывоз возможен\n\n"
         f"{contact_info}\n\n"
@@ -234,9 +222,9 @@ def generate_descriptions(
     )
 
     desc_vk = (
-        f"🔥 {product_info}\n\n"
+        f" {product_info}\n\n"
         f"{features_text}\n\n"
-        f"📦 Доставка: по договорённости\n"
+        f" Доставка: по договорённости\n"
         f"💰 Оплата: наличные / перевод\n"
         f"📦 Самовывоз возможен\n\n"
         f"{contact_info}\n\n"
@@ -244,9 +232,9 @@ def generate_descriptions(
     )
 
     desc_yandex = (
-        f" {product_info}\n\n"
+        f"🔥 {product_info}\n\n"
         f"{features_text}\n\n"
-        f" Доставка: по договорённости\n"
+        f"📦 Доставка: по договорённости\n"
         f"💰 Оплата: наличные / перевод\n"
         f"📦 Самовывоз возможен\n\n"
         f"{contact_info}\n\n"
@@ -257,8 +245,8 @@ def generate_descriptions(
         f"🔥 {product_info}\n\n"
         f"{features_text}\n\n"
         f"📦 Доставка: по договорённости\n"
-        f" Оплата: наличные / перевод\n"
-        f"📦 Самовывоз возможен\n\n"
+        f"💰 Оплата: наличные / перевод\n"
+        f" Самовывоз возможен\n\n"
         f"{contact_info}\n\n"
         f"📞 Звоните — договоримся!"
     )
@@ -268,7 +256,7 @@ def generate_descriptions(
         f"{features_text}\n\n"
         f"📦 Доставка: по договорённости\n"
         f"💰 Оплата: наличные / перевод\n"
-        f" Самовывоз возможен\n\n"
+        f"📦 Самовывоз возможен\n\n"
         f"{contact_info}\n\n"
         f" Пишите или звоните!"
     )
@@ -294,9 +282,9 @@ def generate_descriptions(
     )
 
     desc_meshok = (
-        f" {product_info}\n\n"
+        f"🔥 {product_info}\n\n"
         f"{features_text}\n\n"
-        f" Доставка: по договорённости\n"
+        f"📦 Доставка: по договорённости\n"
         f"💰 Оплата: наличные / перевод\n"
         f"📦 Самовывоз возможен\n\n"
         f"{contact_info}\n\n"
@@ -327,8 +315,6 @@ def generate_descriptions(
     }
 
 
-# ================= СТАТИСТИКА =================
-
 STATS = {
     "cards_made": 1240,
     "hours_saved": 620,
@@ -336,8 +322,6 @@ STATS = {
     "active_users": 87,
 }
 
-
-# ================= РОУТЫ =================
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
@@ -360,7 +344,6 @@ async def get_minapp():
 
 @app.get("/api/stats")
 async def get_stats():
-    """Статистика для Mini App."""
     return STATS
 
 
@@ -373,7 +356,8 @@ async def process_image(
     city: str = Form(""),
     phone: str = Form(""),
     address: str = Form(""),
-    inn: str = Form("")
+    inn: str = Form(""),
+    background: str = Form("white")  # ← НОВЫЙ ПАРАМЕТР
 ):
     """
     Принимает фото → вырезает фон → композитинг →
@@ -390,14 +374,10 @@ async def process_image(
     result_path = Path(settings.RESULTS_DIR) / f"{unique_id}_final.jpg"
 
     try:
-        # 1. Сохраняем оригинал
         with open(orig_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        # 2. Получаем профиль
         profile = get_profile("universal")
-
-        # 3. Пайплайн обработки
         logger.info("🔄 Начало обработки: %s", orig_path.name)
 
         await cutout_product(orig_path, cutout_path)
@@ -407,9 +387,9 @@ async def process_image(
             output_path=result_path,
             profile=profile,
             category=category,
+            background=background  # ← ПЕРЕДАЁМ ФОН
         )
 
-        # 4. Генерируем описания для 10 площадок с данными продавца
         descriptions = generate_descriptions(
             category=category,
             product_name=product_name,
@@ -420,7 +400,6 @@ async def process_image(
             inn=inn
         )
 
-        # 5. Увеличиваем счётчики
         STATS["cards_made"] += 1
         STATS["hours_saved"] = round(STATS["hours_saved"] + 0.5, 1)
 
@@ -448,11 +427,8 @@ async def process_image(
 
 @app.get("/api/health")
 async def health():
-    """Проверка работоспособности."""
     return {"status": "ok", "app": settings.APP_NAME}
 
-
-# ================= ЗАПУСК =================
 
 if __name__ == "__main__":
     import uvicorn
