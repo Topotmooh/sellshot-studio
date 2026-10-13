@@ -1,0 +1,31 @@
+SELLSHOT STUDIO - PIPELINE TEST
+Дата: 2026-08-28 15:26:25
+======================================================================
+Фото                 Профиль      Размер       Вес KB    Сек     Статус
+123.jpg              universal    ERROR        -         -       FAIL  
+123.jpg              classifieds  ERROR        -         -       FAIL  
+2тест.jpg            universal    ERROR        -         -       FAIL  
+2тест.jpg            classifieds  ERROR        -         -       FAIL  
+3тест.jpg            universal    ERROR        -         -       FAIL  
+3тест.jpg            classifieds  ERROR        -         -       FAIL  
+тест2.jpg            universal    ERROR        -         -       FAIL  
+тест2.jpg            classifieds  ERROR        -         -       FAIL  
+
+ДЕТАЛИ:
+======================================================================
+123.jpg / universal
+  Ошибка: 
+123.jpg / classifieds
+  Ошибка: 
+2тест.jpg / universal
+  Ошибка: 
+2тест.jpg / classifieds
+  Ошибка: 
+3тест.jpg / universal
+  Ошибка: 
+3тест.jpg / classifieds
+  Ошибка: 
+тест2.jpg / universal
+  Ошибка: 
+тест2.jpg / classifieds
+  Ошибка: name 'io' is not defined

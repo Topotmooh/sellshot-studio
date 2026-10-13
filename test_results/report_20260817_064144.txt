@@ -1,0 +1,70 @@
+SELLSHOT STUDIO - PIPELINE TEST
+Дата: 2026-08-17 06:41:44
+======================================================================
+Фото                 Профиль      Размер       Вес KB    Сек     Статус
+123.jpg              universal    1200x1200    97.0      88.59   OK    
+123.jpg              classifieds  1600x1200    119.7     79.97   OK    
+2тест.jpg            universal    1200x1200    80.4      58.66   OK    
+2тест.jpg            classifieds  1600x1200    123.3     47.95   OK    
+3тест.jpg            universal    1200x1200    223.2     47.24   OK    
+3тест.jpg            classifieds  1600x1200    245.1     47.49   OK    
+тест2.jpg            universal    1200x1200    99.4      47.20   OK    
+тест2.jpg            classifieds  1600x1200    114.5     48.19   OK    
+
+ДЕТАЛИ:
+======================================================================
+123.jpg / universal
+  [OK] Точный размер под профиль
+  [OK] Минимальная ширина
+  [OK] Формат JPEG
+  [OK] Вес в лимите
+  Файл: data\results\14f123b596f24269b726f008e9a6c94c.jpg
+
+123.jpg / classifieds
+  [OK] Точный размер под профиль
+  [OK] Минимальная ширина
+  [OK] Формат JPEG
+  [OK] Вес в лимите
+  Файл: data\results\f3cd257be3a14899b3731faf5496fbec.jpg
+
+2тест.jpg / universal
+  [OK] Точный размер под профиль
+  [OK] Минимальная ширина
+  [OK] Формат JPEG
+  [OK] Вес в лимите
+  Файл: data\results\f71b10f9381e48ce9d279c00eea01fe7.jpg
+
+2тест.jpg / classifieds
+  [OK] Точный размер под профиль
+  [OK] Минимальная ширина
+  [OK] Формат JPEG
+  [OK] Вес в лимите
+  Файл: data\results\29b1625254b84ea887ab8d58cdf2a095.jpg
+
+3тест.jpg / universal
+  [OK] Точный размер под профиль
+  [OK] Минимальная ширина
+  [OK] Формат JPEG
+  [OK] Вес в лимите
+  Файл: data\results\f96ddf91d2b94c93bd4d68e82192ec9c.jpg
+
+3тест.jpg / classifieds
+  [OK] Точный размер под профиль
+  [OK] Минимальная ширина
+  [OK] Формат JPEG
+  [OK] Вес в лимите
+  Файл: data\results\24f5afa791964f8985904eb02944859a.jpg
+
+тест2.jpg / universal
+  [OK] Точный размер под профиль
+  [OK] Минимальная ширина
+  [OK] Формат JPEG
+  [OK] Вес в лимите
+  Файл: data\results\b4ab921e75dd4ee2a442746d8cf976ed.jpg
+
+тест2.jpg / classifieds
+  [OK] Точный размер под профиль
+  [OK] Минимальная ширина
+  [OK] Формат JPEG
+  [OK] Вес в лимите
+  Файл: data\results\e4b6d82fe1534ea9ace4dcdafe52fdaa.jpg

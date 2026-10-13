@@ -1,39 +1,32 @@
-# ===== Python =====
-.venv/
-venv/
+# Python
 __pycache__/
 *.pyc
 *.pyo
+.venv/
+venv/
 
-# ===== Секреты =====
+# Environment
 .env
-.env.*
-!.env.example
-*.pem
-*.key
+.env.local
 
-# ===== Модели (никогда в git) =====
-*.onnx
-.u2net/
-
-# ===== Данные и логи (ПДн, фото пользователей) =====
-data/
+# Logs
 logs/
-backups/
 *.log
+
+# Temp
+temp/
+results/
+
+# Database
 *.db
 
-# ===== Тесты (приватные фото) =====
-test_results/
-tests/photos/
-
-# ===== Архивы и сборка =====
-*.zip
-
-# ===== Редакторы =====
+# IDE
 .vscode/
-.idea/tunnel_url.txt
-stop_flag.txt
-*.log
-cloudflared.exe
-.aider*
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+*.exe
