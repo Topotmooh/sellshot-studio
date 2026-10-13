@@ -36,3 +36,4 @@ tests/photos/
 stop_flag.txt
 *.log
 cloudflared.exe
+.aider*

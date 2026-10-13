@@ -11,13 +11,13 @@ async def compose_card(
     output_path: Path,
     profile: dict,
     category: str = "universal",
-    background: str = "white"  # ← НОВЫЙ ПАРАМЕТР
+    background: str = "white"
 ) -> Path:
     """
     Создаёт студийную карточку товара:
     1. Загружает вырезанный продукт (PNG с альфа-каналом)
     2. Загружает выбранный фон
-    3. Размещает продукт по центру с тенью
+    3. Размещает продукт по центру с мягкой тенью
     4. Сохраняет результат в output_path
     """
     
@@ -34,37 +34,37 @@ async def compose_card(
         # Фоллбэк на белый фон
         bg = Image.new("RGB", (1080, 1080), (255, 255, 255))
     
-    # 3. Масштабируем продукт (не более 80% от фона)
-    max_size = int(1080 * 0.8)
+    # 3. Масштабируем продукт (не более 75% от фона)
+    max_size = int(1080 * 0.75)
     product.thumbnail((max_size, max_size), Image.LANCZOS)
     
-    # 4. Создаём тень под продуктом
-    shadow = Image.new("RGBA", (1080, 1080), (0, 0, 0, 0))
-    shadow_draw = ImageDraw.Draw(shadow)
-    
+    # 4. Получаем размеры продукта
     pw, ph = product.size
-    shadow_x = (1080 - pw) // 2
-    shadow_y = (1080 - ph) // 2 + 20
     
-    # Рисуем размытый эллипс-тень
+    # 5. Создаём мягкую тень под продуктом
     shadow_ellipse = Image.new("RGBA", (1080, 1080), (0, 0, 0, 0))
     se_draw = ImageDraw.Draw(shadow_ellipse)
-    se_draw.ellipse(
-        [shadow_x + 20, shadow_y + ph - 30, shadow_x + pw - 20, shadow_y + ph + 30],
-        fill=(0, 0, 0, 60)
-    )
-    shadow_ellipse = shadow_ellipse.filter(ImageFilter.GaussianBlur(radius=15))
     
-    # 5. Накладываем тень на фон
+    shadow_x = (1080 - pw) // 2
+    shadow_y = (1080 - ph) // 2
+    
+    # Рисуем мягкий эллипс-тень
+    se_draw.ellipse(
+        [shadow_x + 30, shadow_y + ph - 10, shadow_x + pw - 30, shadow_y + ph + 50],
+        fill=(0, 0, 0, 35)
+    )
+    shadow_ellipse = shadow_ellipse.filter(ImageFilter.GaussianBlur(radius=25))
+    
+    # 6. Накладываем тень на фон
     bg.paste(shadow_ellipse, (0, 0), shadow_ellipse)
     
-    # 6. Накладываем продукт по центру
+    # 7. Накладываем продукт по центру
     product_x = (1080 - pw) // 2
     product_y = (1080 - ph) // 2
     
     bg.paste(product, (product_x, product_y), product)
     
-    # 7. Сохраняем результат
+    # 8. Сохраняем результат
     bg.save(output_path, "JPEG", quality=95)
     
     return output_path
