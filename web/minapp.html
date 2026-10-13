@@ -103,7 +103,6 @@
         .form-textarea { resize: vertical; min-height: 80px; }
         .form-hint { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
 
-        /* Стили для выбора фона */
         .bg-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
         .bg-option { cursor: pointer; text-align: center; }
         .bg-option input { display: none; }
@@ -238,12 +237,16 @@
 
         <!-- СОСТОЯНИЕ 2: КАДРИРОВАНИЕ -->
         <div id="cropState" class="hidden">
-            <div class="card-label">Обрежьте лишнее</div>
+            <div class="card-label">Выделите товар в квадратной рамке</div>
+            <div style="background: rgba(255,87,34,0.1); border: 1px solid var(--accent); border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; font-size: 13px; color: var(--accent);">
+                ⚠️ Убедитесь, что товар <strong>полностью</strong> внутри рамки. Квадратное фото лучше смотрится на Авито и Юле.
+            </div>
             <div class="cropper-container-wrapper">
                 <img id="cropImage" src="">
             </div>
-            <button class="btn btn-primary" onclick="goToForm()">Далее: заполнить информацию</button>
-            <button class="btn btn-secondary" onclick="resetApp()">Выбрать другое фото</button>
+            <button class="btn btn-primary" onclick="goToForm()">✅ Далее: заполнить информацию</button>
+            <button class="btn btn-secondary" onclick="resetCrop()">🔄 Сбросить рамку</button>
+            <button class="btn btn-secondary" onclick="resetApp()">🗑️ Выбрать другое фото</button>
         </div>
 
         <!-- СОСТОЯНИЕ 3: ФОРМА -->
@@ -299,7 +302,6 @@
                 <input type="text" id="inn" class="form-input" placeholder="10 или 12 цифр">
             </div>
 
-            <!-- ВЫБОР ФОНА -->
             <div class="form-group">
                 <label class="form-label">Фон карточки *</label>
                 <div class="bg-grid">
@@ -475,7 +477,7 @@
                 if (cropper) cropper.destroy();
                 
                 cropper = new Cropper(cropImage, {
-                    aspectRatio: NaN,
+                    aspectRatio: 1,
                     viewMode: 1,
                     dragMode: 'move',
                     autoCropArea: 0.9,
@@ -486,6 +488,8 @@
                     cropBoxMovable: true,
                     cropBoxResizable: true,
                     toggleDragModeOnDblclick: false,
+                    minCropBoxWidth: 300,
+                    minCropBoxHeight: 300,
                 });
                 
                 showState('cropState');
@@ -494,6 +498,20 @@
 
             document.getElementById('fileInput').value = '';
             document.getElementById('cameraInput').value = '';
+        }
+
+        function resetCrop() {
+            if (cropper) {
+                cropper.reset();
+                const container = cropper.getContainerData();
+                const size = Math.min(container.width, container.height) * 0.9;
+                cropper.setCropBoxData({
+                    left: (container.width - size) / 2,
+                    top: (container.height - size) / 2,
+                    width: size,
+                    height: size
+                });
+            }
         }
 
         function goToForm() {
@@ -510,7 +528,6 @@
             const address = document.getElementById('address').value.trim();
             const inn = document.getElementById('inn').value.trim();
             
-            // Получаем выбранный фон
             const background = document.querySelector('input[name="background"]:checked')?.value || 'white';
 
             if (!productName || !productDescription || !city || !phone) {
